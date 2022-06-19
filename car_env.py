@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import time
 import csv
-from math import sqrt
+from math import sqrt, pow
 
 import matplotlib.pyplot as plt
 
@@ -77,9 +77,8 @@ class CarEnv(gym.Env):
     """Environment for car path planning"""
 
     metadata = {"render.modes": ["human"]}
-    # window = pyglet.window.Window(800, 600)
 
-    def __init__(self):
+    def __init__(self, draw: bool) -> None:
         super(CarEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -92,8 +91,8 @@ class CarEnv(gym.Env):
             low=-10000, high=10000, shape=(2,), dtype=np.float64
         )
         
-        plt.ion()
-        self.fig = plt.figure()
+        self.draw = draw
+
         i = 0
         self.case  = Case.read('BenchmarkCases/Case%d.csv' % (i + 1))
 
@@ -101,23 +100,27 @@ class CarEnv(gym.Env):
         self.car_y = self.case.y0
         self.car_theta = self.case.theta0
 
-        plt.xlim(self.case.xmin, self.case.xmax)
-        plt.ylim(self.case.ymin, self.case.ymax)
-        plt.gca().set_aspect('equal', adjustable = 'box')
-        plt.gca().set_axisbelow(True)
-        plt.title('self.case %d' % (i + 1))
-        plt.grid(linewidth = 0.2)
-        plt.xlabel('X / m', fontsize = 14)
-        plt.ylabel('Y / m', fontsize = 14)
+        if self.draw:
+            plt.ion()
+            self.fig = plt.figure()
+            plt.xlim(self.case.xmin, self.case.xmax)
+            plt.ylim(self.case.ymin, self.case.ymax)
+            plt.gca().set_aspect('equal', adjustable = 'box')
+            plt.gca().set_axisbelow(True)
+            plt.title('self.case %d' % (i + 1))
+            plt.grid(linewidth = 0.2)
+            plt.xlabel('X / m', fontsize = 14)
+            plt.ylabel('Y / m', fontsize = 14)
 
-        for j in range(0, self.case.obs_num):
-            plt.fill(self.case.obs[j][:, 0], self.case.obs[j][:, 1], facecolor = 'k', alpha = 0.5)
+            for j in range(0, self.case.obs_num):
+                plt.fill(self.case.obs[j][:, 0], self.case.obs[j][:, 1], facecolor = 'k', alpha = 0.5)
 
     def step(self, action):
-        temp = self.case.vehicle.create_polygon(self.car_x, self.car_y, self.case.theta0)
-        plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'green')
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+        if self.draw:
+            temp = self.case.vehicle.create_polygon(self.car_x, self.car_y, self.case.theta0)
+            plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'green')
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
 
         if action == 0:
             self.car_x -= SPEED
@@ -128,12 +131,14 @@ class CarEnv(gym.Env):
         if action == 3:
             self.car_y -= SPEED
 
-        dist = sqrt((GOAL_X - self.car_x) - (GOAL_Y - self.car_y))
+        dist = sqrt(pow(GOAL_X - self.car_x, 2) + pow(GOAL_Y - self.car_y, 2))
         MAX_REWARD = 100000
         if dist == 0:
             reward = MAX_REWARD
         else:
             reward = 1 / dist
+
+        self.reward = reward
 
         info = {}
         observation = self.__get_dist()
