@@ -3,7 +3,8 @@ from stable_baselines3 import PPO
 from car_env import CarEnv
 
 models_dir = "models"
-model_path = "models/1655655638/100000.zip"
+model_path = "models/1655764236/400000.zip"
+
 
 env = CarEnv(draw=True)
 env.reset()
@@ -18,4 +19,4 @@ for ep in range(EPISODES):
     while not done:
         action, _states = model.predict(obs)
         obs, reward, done, info = env.step(action)
-        print(reward)
+        print(info["dist"])

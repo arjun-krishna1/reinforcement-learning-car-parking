@@ -3,7 +3,7 @@ from gym import spaces
 import numpy as np
 import time
 import csv
-from math import sqrt, pow
+from math import sqrt, pow, pi
 
 import matplotlib.pyplot as plt
 
@@ -65,13 +65,9 @@ class Case:
                 case.obs.append(np.array(v[vs:vs + nv * 2]).reshape((nv, 2), order='A'))
         return case
 
-INIT_CAR_X = 200
-INIT_CAR_Y = 200
-
-GOAL_X = 700
-GOAL_Y = 500
-
 SPEED = 1
+ANGULAR_SPEED = 0.1
+TURN_THRESHOLD = 0.7
 
 class CarEnv(gym.Env):
     """Environment for car path planning"""
@@ -83,17 +79,18 @@ class CarEnv(gym.Env):
         # Define action and observation space
         # They must be gym.spaces objects
         # Example when using discrete actions:
-        # move left, up, right or down
-        self.action_space = spaces.Discrete(4)
+        # move left, up, right or down; rotate CCW or CW
+        self.action_space = spaces.Discrete(6)
         # Example for using image as input (channel-first; channel-last also works):
-        #(delta_x, delta_y), distance to locatoin
+        #(delta_x, delta_y, delta_theta), distance to locatoin
         self.observation_space = spaces.Box(
-            low=-10000, high=10000, shape=(2,), dtype=np.float64
+            low=-10000, high=10000, shape=(3,), dtype=np.float64
         )
         
         self.draw = draw
+        self.last_dist = float('inf')
 
-        i = 0
+        i = 19
         self.case  = Case.read('BenchmarkCases/Case%d.csv' % (i + 1))
 
         self.car_x = self.case.x0
@@ -114,6 +111,13 @@ class CarEnv(gym.Env):
 
             for j in range(0, self.case.obs_num):
                 plt.fill(self.case.obs[j][:, 0], self.case.obs[j][:, 1], facecolor = 'k', alpha = 0.5)
+            
+            plt.arrow(self.case.x0, self.case.y0, np.cos(self.case.theta0), np.sin(self.case.theta0), width=0.2, color = "gold")
+            plt.arrow(self.case.xf, self.case.yf, np.cos(self.case.thetaf), np.sin(self.case.thetaf), width=0.2, color = "gold")
+            temp = self.case.vehicle.create_polygon(self.case.x0, self.case.y0, self.case.theta0)
+            plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'green')
+            temp = self.case.vehicle.create_polygon(self.case.xf, self.case.yf, self.case.thetaf)
+            plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'red')
 
     def step(self, action):
         if self.draw:
@@ -130,19 +134,24 @@ class CarEnv(gym.Env):
             self.car_x += SPEED
         if action == 3:
             self.car_y -= SPEED
+        if action == 4:
+            self.car_theta += ANGULAR_SPEED
+        if action == 5:
+            self.car_theta -= ANGULAR_SPEED
 
-        dist = sqrt(pow(GOAL_X - self.car_x, 2) + pow(GOAL_Y - self.car_y, 2))
-        MAX_REWARD = 100000
-        if dist == 0:
-            reward = MAX_REWARD
-        else:
-            reward = 1 / dist
+        dist = sqrt(pow(self.case.xf - self.car_x, 2) + pow(self.case.yf - self.car_y, 2) + pow(self.case.thetaf - self.car_theta, 2))
+        
+        self.reward = 1 - pow(dist, 0.4)
 
-        self.reward = reward
-
-        info = {}
+        info = {
+            "car_x": self.car_x,
+            "car_y": self.car_y,
+            "goal_x": self.case.xf,
+            "goal_y": self.case.yf,
+            "dist": dist,
+        }
         observation = self.__get_dist()
-        return observation, reward, reward == MAX_REWARD, info
+        return observation, self.reward, dist == 0, info
 
     def reset(self):
         self.car_x = self.case.x0
@@ -151,6 +160,9 @@ class CarEnv(gym.Env):
         observation = self.__get_dist()
         return observation
     
+    def close(self):
+        plt.close(self.fig)
+    
     def __get_dist(self):
-        return np.array([GOAL_X - self.car_x, GOAL_Y - self.car_y])
+        return np.array([self.case.xf - self.car_x, self.case.yf - self.car_y, self.case.thetaf - self.car_theta])
 

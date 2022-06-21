@@ -81,8 +81,8 @@ def main():
     for j in range(0, case.obs_num):
         plt.fill(case.obs[j][:, 0], case.obs[j][:, 1], facecolor = 'k', alpha = 0.5)
 
-    # plt.arrow(case.x0, case.y0, np.cos(case.theta0), np.sin(case.theta0), width=0.2, color = "gold")
-    # plt.arrow(case.xf, case.yf, np.cos(case.thetaf), np.sin(case.thetaf), width=0.2, color = "gold")
+    plt.arrow(case.x0, case.y0, np.cos(case.theta0), np.sin(case.theta0), width=0.2, color = "gold")
+    plt.arrow(case.xf, case.yf, np.cos(case.thetaf), np.sin(case.thetaf), width=0.2, color = "gold")
     temp = case.vehicle.create_polygon(case.x0, case.y0, case.theta0)
     plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'green')
     temp = case.vehicle.create_polygon(case.xf, case.yf, case.thetaf)

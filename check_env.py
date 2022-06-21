@@ -3,7 +3,7 @@ from car_env import CarEnv
 
 from time import sleep
 
-env = CarEnv()
+env = CarEnv(draw=True)
 
 check_env(env)
 
@@ -16,4 +16,4 @@ for episode in range(episodes):
 		random_action = env.action_space.sample()
 		# print("action",random_action)
 		obs, reward, done, info = env.step(random_action)
-		print('reward',reward)
+		print('reward', reward)
