@@ -6,7 +6,7 @@ models_dir = "models"
 model_path = "models/1655764236/400000.zip"
 
 
-env = CarEnv(draw=True)
+env = CarEnv(draw=True, benchmark_num=2)
 env.reset()
 model = PPO.load(model_path, env=env)
 

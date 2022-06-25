@@ -7,6 +7,8 @@ from math import sqrt, pow, pi
 
 import matplotlib.pyplot as plt
 
+import pymunk
+from pymunk.shapes import Shape
 
 class Vehicle:
     def __init__(self):
@@ -74,7 +76,7 @@ class CarEnv(gym.Env):
 
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, draw: bool) -> None:
+    def __init__(self, draw: bool = False, benchmark_num: int = 1) -> None:
         super(CarEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -90,12 +92,37 @@ class CarEnv(gym.Env):
         self.draw = draw
         self.last_dist = float('inf')
 
-        i = 19
-        self.case  = Case.read('BenchmarkCases/Case%d.csv' % (i + 1))
+        self.case  = Case.read('BenchmarkCases/Case%d.csv' % (benchmark_num))
 
         self.car_x = self.case.x0
         self.car_y = self.case.y0
         self.car_theta = self.case.theta0
+
+        self.space = pymunk.Space()
+        self.space.iterations = 10
+        self.space.sleep_time_threshold = 0.5
+
+        body = pymunk.Body()
+        self.space.add(body)
+
+        v = self.case.vehicle
+        self.car_shape = pymunk.Poly.create_box(body,
+            (
+                v.lb,
+                v.lw + v.lf + v.lr,
+            ), 0.0)
+        self.space.add(self.car_shape)
+
+        for j in range(0, self.case.obs_num):
+            self.space.add(
+                pymunk.Poly(
+                    # TODO may have to change body
+                    # obstacle don't move so don't think I have to
+                    body=self.space.static_body,
+                    # TODO if strange behaviour may have to make sure that points are clockwise
+                    vertices=[tuple(i) for i in self.case.obs[j]],
+                )
+            )
 
         if self.draw:
             plt.ion()
@@ -104,7 +131,7 @@ class CarEnv(gym.Env):
             plt.ylim(self.case.ymin, self.case.ymax)
             plt.gca().set_aspect('equal', adjustable = 'box')
             plt.gca().set_axisbelow(True)
-            plt.title('self.case %d' % (i + 1))
+            plt.title('self.case %d' % (benchmark_num))
             plt.grid(linewidth = 0.2)
             plt.xlabel('X / m', fontsize = 14)
             plt.ylabel('Y / m', fontsize = 14)
