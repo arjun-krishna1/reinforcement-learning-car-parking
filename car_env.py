@@ -5,69 +5,17 @@ import time
 import csv
 from math import sqrt, pow, pi
 
+import pymunk
+
 import matplotlib.pyplot as plt
 
-
-class Vehicle:
-    def __init__(self):
-        self.lw = 2.8  # wheelbase
-        self.lf = 0.96  # front hang length
-        self.lr = 0.929  # rear hang length
-        self.lb = 1.942  # width
-
-    def create_polygon(self, x, y, theta):
-        cos_theta = np.cos(theta)
-        sin_theta = np.sin(theta)
-
-        points = np.array([
-            [-self.lr, -self.lb / 2, 1],
-            [self.lf + self.lw, -self.lb / 2, 1],
-            [self.lf + self.lw, self.lb / 2, 1],
-            [-self.lr, self.lb / 2, 1],
-            [-self.lr, -self.lb / 2, 1],
-        ]).dot(np.array([
-            [cos_theta, -sin_theta, x],
-            [sin_theta, cos_theta, y],
-            [0, 0, 1]
-        ]).transpose())
-        return points[:, 0:2]
-
-
-class Case:
-    def __init__(self):
-        self.x0, self.y0, self.theta0 = 0, 0, 0
-        self.xf, self.yf, self.thetaf = 0, 0, 0
-        self.xmin, self.xmax = 0, 0
-        self.ymin, self.ymax = 0, 0
-        self.obs_num = 0
-        self.obs = np.array([])
-        self.vehicle = Vehicle()
-
-    @staticmethod
-    def read(file):
-        case = Case()
-        with open(file, 'r') as f:
-            reader = csv.reader(f)
-            tmp = list(reader)
-            v = [float(i) for i in tmp[0]]
-            case.x0, case.y0, case.theta0 = v[0:3]
-            case.xf, case.yf, case.thetaf = v[3:6]
-            case.xmin = min(case.x0, case.xf) - 8
-            case.xmax = max(case.x0, case.xf) + 8
-            case.ymin = min(case.y0, case.yf) - 8
-            case.ymax = max(case.y0, case.yf) + 8
-
-            case.obs_num = int(v[6])
-            num_vertexes = np.array(v[7:7 + case.obs_num], dtype=np.int)
-            vertex_start = 7 + case.obs_num + (np.cumsum(num_vertexes, dtype=np.int) - num_vertexes) * 2
-            case.obs = []
-            for vs, nv in zip(vertex_start, num_vertexes):
-                case.obs.append(np.array(v[vs:vs + nv * 2]).reshape((nv, 2), order='A'))
-        return case
+from Reader import Case
 
 SPEED = 1
 ANGULAR_SPEED = 0.1
 TURN_THRESHOLD = 0.7
+
+colliding = False
 
 class CarEnv(gym.Env):
     """Environment for car path planning"""
@@ -80,7 +28,8 @@ class CarEnv(gym.Env):
         # They must be gym.spaces objects
         # Example when using discrete actions:
         # move left, up, right or down; rotate CCW or CW
-        self.action_space = spaces.Discrete(6)
+        # self.action_space = spaces.Discrete(6)
+        self.action_space = spaces.Discrete(4) # TODO add angle back in
         # Example for using image as input (channel-first; channel-last also works):
         #(delta_x, delta_y, delta_theta), distance to locatoin
         self.observation_space = spaces.Box(
@@ -97,6 +46,8 @@ class CarEnv(gym.Env):
         self.car_y = self.case.y0
         self.car_theta = self.case.theta0
 
+        self.space = pymunk.Space()
+
         if self.draw:
             plt.ion()
             self.fig = plt.figure()
@@ -111,13 +62,44 @@ class CarEnv(gym.Env):
 
             for j in range(0, self.case.obs_num):
                 plt.fill(self.case.obs[j][:, 0], self.case.obs[j][:, 1], facecolor = 'k', alpha = 0.5)
+                obs_body = pymunk.Body()
+                obs_body.position = pymunk.Vec2d()
+                
+                obs_shape = pymunk.Poly(obs_body, self.case.obs[j])
+                obs_shape.collision_type = 1
+                # detect collisions but don't affect movement of car
+                obs_shape.sensor = True
+                self.space.add(obs_body, obs_shape)
             
             plt.arrow(self.case.x0, self.case.y0, np.cos(self.case.theta0), np.sin(self.case.theta0), width=0.2, color = "gold")
             plt.arrow(self.case.xf, self.case.yf, np.cos(self.case.thetaf), np.sin(self.case.thetaf), width=0.2, color = "gold")
             temp = self.case.vehicle.create_polygon(self.case.x0, self.case.y0, self.case.theta0)
             plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'green')
+            
+            # set up car for physics engine
+            car_body = pymunk.Body()
+            # set the car body position as the center of real axle
+            car_body.position = pymunk.Vec2d(self.case.x0, self.case.y0)
+            # TODO rotate car body in pymunk engine
+
+            # set the car's shape
+            self.car_shape = pymunk.Poly(car_body, temp)
+            self.car_shape.mass = 1
+            self.car_shape.collision_type = 0
+
+            self.space.add(car_body, self.car_shape)
+
             temp = self.case.vehicle.create_polygon(self.case.xf, self.case.yf, self.case.thetaf)
             plt.plot(temp[:, 0], temp[:, 1], linestyle='--', linewidth = 0.4, color = 'red')
+
+        col_handler = self.space.add_collision_handler(0, 1)
+        def collide(self, arbiter, space):
+            # print('colliding!')
+            # TODO what is proper way to set flag in environment when this happens?
+            colliding = True
+        
+        col_handler.begin = collide
+
 
     def step(self, action):
         if self.draw:
@@ -134,14 +116,19 @@ class CarEnv(gym.Env):
             self.car_x += SPEED
         if action == 3:
             self.car_y -= SPEED
-        if action == 4:
-            self.car_theta += ANGULAR_SPEED
-        if action == 5:
-            self.car_theta -= ANGULAR_SPEED
+        # if action == 4:
+        #     self.car_theta += ANGULAR_SPEED
+        # if action == 5:
+        #     self.car_theta -= ANGULAR_SPEED
 
         dist = sqrt(pow(self.case.xf - self.car_x, 2) + pow(self.case.yf - self.car_y, 2) + pow(self.case.thetaf - self.car_theta, 2))
         
         self.reward = 1 - pow(dist, 0.4)
+
+        COLLIDING_PENALTY = -1
+
+        if colliding:
+            self.reward -= COLLIDING_PENALTY
 
         info = {
             "car_x": self.car_x,
